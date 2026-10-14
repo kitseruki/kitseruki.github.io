@@ -1,0 +1,1332 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>KITSERUKI | D-VSN</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&display=swap');
+
+        *, *::before, *::after {
+            box-sizing: border-box;
+        }
+
+        body, html { 
+            margin: 0; padding: 0; background: #010101; color: #ffffff; 
+            font-family: 'Inter', sans-serif; overflow: hidden; cursor: none; 
+            user-select: none; width: 100vw; height: 100vh;
+        }
+
+        .noise {
+            position: fixed; inset: 0; z-index: 9998; pointer-events: none;
+            opacity: 0.04; mix-blend-mode: overlay;
+            background: url('data:image/svg+xml;utf8,%3Csvg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg"%3E%3Cfilter id="noiseFilter"%3E%3CfeTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="3" stitchTiles="stitch"/%3E%3C/filter%3E%3Crect width="100%25" height="100%25" filter="url(%23noiseFilter)"/%3E%3C/svg%3E');
+        }
+        
+        #custom-cursor {
+            position: fixed; top: 0; left: 0; width: 96px; height: 96px;
+            pointer-events: none; z-index: 9999; will-change: transform;
+        }
+        
+        #canvas { position: fixed; inset: 0; z-index: 0; }
+        
+        /* Base UI System */
+        .ui { 
+            position: absolute; inset: 0; display: grid; grid-template-columns: 320px 1fr 320px; 
+            padding: 4rem; pointer-events: none; z-index: 1; perspective: 1200px; 
+            transition: all 1.2s cubic-bezier(0.19, 1, 0.22, 1);
+        }
+        
+        /* UI Transition States */
+        .ui.transition-warp { transform: scale(1.8) translateZ(300px); opacity: 0; filter: blur(10px); }
+        .ui.transition-drop { transform: translateY(120vh) rotateX(-60deg) scale(0.8); opacity: 0; }
+        .ui.transition-lift { transform: translateY(-120vh) rotateX(30deg) scale(0.8); opacity: 0; }
+
+        .panel { 
+            pointer-events: auto; background: rgba(5, 5, 5, 0.5); 
+            border: 1px solid rgba(255, 255, 255, 0.03); padding: 3rem; 
+            backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+            display: flex; flex-direction: column; transform-style: preserve-3d; 
+            box-shadow: 0 30px 60px rgba(0,0,0,0.8), inset 0 0 0 1px rgba(255,255,255,0.02);
+            will-change: transform;
+        }
+        
+        h1 { 
+            font-size: 1.1rem; letter-spacing: 0.3rem; font-weight: 600; margin: 0; 
+            text-transform: uppercase; text-shadow: 0 0 20px rgba(255,255,255,0.3);
+            white-space: nowrap;
+        }
+
+        .nav-container { margin-top: 4rem; display: flex; flex-direction: column; gap: 1rem; }
+        
+        .nav-item { 
+            padding: 1.2rem; border: 1px solid rgba(255,255,255,0.05);
+            cursor: none; transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1); 
+            transform-style: preserve-3d; font-size: 0.85rem; letter-spacing: 0.15rem;
+            color: rgba(255,255,255,0.6); position: relative; overflow: hidden;
+            background: rgba(255,255,255,0.01);
+            text-transform: uppercase;
+        }
+
+        .nav-item::after { content: ''; position: absolute; left: 0; bottom: 0; height: 1px; width: 0%; background: #fff; transition: width 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
+        .nav-item:hover { transform: translateZ(30px); border-color: rgba(255,255,255,0.2); color: #ffffff; background: rgba(255,255,255,0.03); text-shadow: 0 0 10px rgba(255,255,255,0.5); }
+        .nav-item:hover::after { width: 100%; }
+
+        .status { font-size: 0.75rem; letter-spacing: 0.2rem; font-weight: 300; display: flex; align-items: center; gap: 0.5rem; color: rgba(255,255,255,0.5); }
+        .status::before { content: ''; width: 6px; height: 6px; background: #00ff88; border-radius: 50%; box-shadow: 0 0 10px #00ff88; animation: pulse 2s infinite; }
+
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+        /* Dynamic Content Presentation Layers */
+        #content-layer {
+            position: fixed; inset: 0; z-index: 50; display: flex; flex-direction: column;
+            align-items: center; justify-content: center; pointer-events: none; opacity: 0;
+            transition: opacity 1s ease;
+        }
+        #content-layer.visible { opacity: 1; pointer-events: auto; }
+
+        .content-title {
+            font-size: 2rem; letter-spacing: 0.4rem; font-weight: 300; margin-bottom: 2rem;
+            text-shadow: 0 0 30px rgba(255,255,255,0.8); text-align: center;
+        }
+
+        .return-btn {
+            padding: 1rem 3rem; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.3);
+            color: white; font-family: 'Inter', sans-serif; letter-spacing: 0.2rem; cursor: none;
+            transition: all 0.3s ease; text-transform: uppercase; font-size: 0.8rem;
+            backdrop-filter: blur(10px); margin-top: 2rem;
+        }
+        .return-btn:hover { background: white; color: black; box-shadow: 0 0 30px rgba(255,255,255,0.8); }
+
+        /* Init Sequence System */
+        .init-layout {
+            display: flex; gap: 3rem; width: 80vw; max-width: 900px;
+            background: rgba(0, 10, 20, 0.5); border: 1px solid rgba(0, 255, 255, 0.2);
+            padding: 3rem; backdrop-filter: blur(12px); pointer-events: auto;
+            box-shadow: inset 0 0 30px rgba(0,0,0,0.8), 0 20px 50px rgba(0,0,0,0.5);
+        }
+        .profile-pic {
+            width: 220px; height: 220px; flex-shrink: 0;
+            border: 1px dashed rgba(0, 255, 255, 0.4);
+            background-color: rgba(0,0,0,0.5);
+            background-image: repeating-linear-gradient(45deg, rgba(0,255,255,0.02), rgba(0,255,255,0.02) 10px, transparent 10px, transparent 20px);
+            display: flex; align-items: center; justify-content: center;
+            color: rgba(0,255,255,0.3); font-size: 0.7rem; letter-spacing: 0.2rem;
+            background-size: cover; background-position: center; position: relative;
+        }
+        .profile-pic::after { content: ''; position: absolute; inset: 0; box-shadow: inset 0 0 20px rgba(0,0,0,0.8); pointer-events: none; }
+        .bio-text {
+            flex: 1; color: rgba(255,255,255,0.8); font-size: 0.9rem; line-height: 1.8;
+            overflow-y: auto; max-height: 400px; padding-right: 1rem;
+        }
+        .bio-text::-webkit-scrollbar { width: 4px; }
+        .bio-text::-webkit-scrollbar-thumb { background: rgba(0,255,255,0.3); }
+
+        /* Archive Deck System */
+        .archive-deck { display: flex; gap: 1rem; width: 85vw; height: 60vh; max-width: 1400px; perspective: 1200px; }
+        .archive-card {
+            flex: 1; background: rgba(0, 5, 10, 0.4); border: 1px solid rgba(0, 255, 255, 0.15);
+            transition: all 0.7s cubic-bezier(0.19, 1, 0.22, 1);
+            backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+            position: relative; overflow: hidden; cursor: none;
+            display: flex; flex-direction: column; justify-content: center; align-items: center;
+            box-shadow: inset 0 0 0 1px rgba(0,255,255,0.05);
+        }
+        .archive-card::before {
+            content: ''; position: absolute; inset: 0; background: linear-gradient(180deg, rgba(0,255,255,0.05) 0%, transparent 100%);
+            opacity: 0; transition: opacity 0.5s ease; pointer-events: none;
+        }
+        .archive-card:hover, .archive-card:active, .archive-card.is-open {
+            flex: 3; background: rgba(0, 15, 25, 0.6); border-color: rgba(0, 255, 255, 0.6);
+            box-shadow: 0 20px 50px rgba(0,0,0,0.8), inset 0 0 20px rgba(0,255,255,0.1);
+        }
+        .archive-card:hover::before, .archive-card.is-open::before { opacity: 1; }
+        .card-title { font-size: 1.2rem; letter-spacing: 0.3rem; font-weight: 300; color: rgba(0, 255, 255, 0.5); transition: all 0.5s ease; white-space: nowrap; transform: rotate(-90deg); position: absolute; }
+        .archive-card:hover .card-title, .archive-card.is-open .card-title { transform: rotate(0deg) translateY(-40%); color: #00ffff; text-shadow: 0 0 15px rgba(0,255,255,0.5); top: 3rem; position: absolute; }
+        .card-content { opacity: 0; transform: translateY(20px); transition: all 0.4s cubic-bezier(0.19, 1, 0.22, 1); width: 80%; height: 60%; margin-top: 4rem; display: flex; flex-direction: column; border-top: 1px solid rgba(0,255,255,0.2); padding-top: 2rem; color: rgba(255,255,255,0.8); font-size: 0.9rem; letter-spacing: 0.1rem; line-height: 1.6; pointer-events: none; }
+        .archive-card:hover .card-content, .archive-card.is-open .card-content { opacity: 1; transform: translateY(0); transition-delay: 0.2s; }
+        
+        /* Project Display Classes */
+        .proj-text-container {
+            width: 100%;
+            max-width: 550px;
+            flex-shrink: 0;
+            font-size: 0.65rem;
+            line-height: 1.5;
+            margin-bottom: 1rem;
+        }
+        .proj-img-container {
+            flex: 1;
+            width: 100%;
+            min-height: 160px;
+            border: 1px solid rgba(0,255,255,0.3);
+            background-size: cover;
+            background-position: center;
+            box-shadow: inset 0 0 15px rgba(0,0,0,0.6);
+            border-radius: 2px;
+        }
+
+        /* Specialized Archive Sub-Styles */
+        .redacted-block { background: #00ffff; color: #00ffff; display: inline-block; line-height: 1; padding: 0 0.2rem; margin: 0 0.1rem; transition: all 0.3s; }
+        .redacted-card:hover .redacted-block, .redacted-card.is-open .redacted-block { background: #fff; color: #fff; }
+        .img-redacted { background: #000; display: flex; align-items: center; justify-content: center; position: relative; overflow: hidden; border-color: rgba(0,255,255,0.4); box-shadow: none; }
+        .img-redacted::after { content: 'REDACTED'; color: #00ffff; border: 2px solid #00ffff; padding: 0.5rem 2rem; transform: rotate(-10deg); font-weight: 600; letter-spacing: 0.4rem; background: rgba(0,0,0,0.8); z-index: 2; box-shadow: 0 0 20px rgba(0,255,255,0.2); }
+        .img-redacted::before { content: ''; position: absolute; inset: 0; background: repeating-linear-gradient(45deg, rgba(0,255,255,0.05), rgba(0,255,255,0.05) 2px, transparent 2px, transparent 8px); z-index: 1; }
+        
+        .corrupt-card { border-color: rgba(255, 0, 85, 0.15); box-shadow: inset 0 0 0 1px rgba(255,0,85,0.05); }
+        .corrupt-card::before { background: linear-gradient(180deg, rgba(255,0,85,0.05) 0%, transparent 100%); }
+        .corrupt-card:hover, .corrupt-card:active, .corrupt-card.is-open { border-color: rgba(255, 0, 85, 0.6); box-shadow: 0 20px 50px rgba(0,0,0,0.8), inset 0 0 20px rgba(255,0,85,0.1); }
+        .corrupt-card .card-title { color: rgba(255, 0, 85, 0.5); }
+        .corrupt-card:hover .card-title, .corrupt-card.is-open .card-title { color: #ff0055; text-shadow: 0 0 15px rgba(255,0,85,0.5); }
+        .corrupt-card .card-content { border-top-color: rgba(255,0,85,0.2); }
+        .corrupt-text { font-family: monospace; color: #ff0055; text-shadow: 2px 0 rgba(0,255,255,0.5), -2px 0 rgba(0,255,0,0.5); animation: glitch-anim-heading 2s infinite step-end alternate-reverse; font-weight: 600; font-size: 0.75rem; }
+        .img-corrupt { background: #0a0002; display: flex; align-items: center; justify-content: center; position: relative; overflow: hidden; border: 1px dashed rgba(255,0,85,0.5); box-shadow: inset 0 0 15px rgba(255,0,85,0.2); }
+        .img-corrupt::after { content: 'ERR_0x000F'; color: #ff0055; font-family: monospace; font-size: 1.5rem; animation: glitch-anim 0.3s infinite; position: absolute; z-index: 2; }
+        .img-corrupt::before { content: ''; position: absolute; inset: 0; background: url('data:image/svg+xml;utf8,%3Csvg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg"%3E%3Cfilter id="noiseFilter"%3E%3CfeTurbulence type="fractalNoise" baseFrequency="5" numOctaves="1" stitchTiles="stitch"/%3E%3C/filter%3E%3Crect width="100%25" height="100%25" filter="url(%23noiseFilter)" opacity="0.3"/%3E%3C/svg%3E'); mix-blend-mode: color-dodge; opacity: 0.5; z-index: 1; }
+
+        /* Compliance Matrix System */
+        .compliance-grid { display: grid; grid-template-columns: 1fr; gap: 1.5rem; width: 60vw; max-width: 800px; perspective: 1200px; }
+        .compliance-row { 
+            display: flex; flex-direction: column; align-items: stretch; 
+            padding: 1.5rem 2rem; background: rgba(0, 255, 136, 0.05); 
+            border-left: 4px solid #00ff88; border-right: 1px solid rgba(0, 255, 136, 0.1); 
+            border-top: 1px solid rgba(0, 255, 136, 0.1); border-bottom: 1px solid rgba(0, 255, 136, 0.1); 
+            backdrop-filter: blur(10px); cursor: none; 
+            transition: transform 0.4s cubic-bezier(0.19, 1, 0.22, 1), background 0.3s, border 0.3s; 
+            position: relative; overflow: hidden; transform-origin: center; transform-style: preserve-3d;
+        }
+        .compliance-row.flipping { transform: rotateX(90deg) scale(0.95); opacity: 0.5; pointer-events: none; }
+        .compliance-row::before { content: ''; position: absolute; top: 0; left: -100%; width: 50%; height: 100%; background: linear-gradient(90deg, transparent, rgba(0,255,136,0.2), transparent); transition: left 0.5s ease; pointer-events: none; }
+        .compliance-row:not(.flipping):hover { background: rgba(0, 255, 136, 0.15); transform: translateX(20px); box-shadow: 0 10px 30px rgba(0, 255, 136, 0.15); border-right-color: rgba(0, 255, 136, 0.5); }
+        .compliance-row:not(.flipping):hover::before { left: 200%; }
+        .compliance-row.expanded { background: rgba(0, 255, 136, 0.1); border-right-color: rgba(0, 255, 136, 0.5); transform: translateX(20px); }
+        
+        .compliance-row-header { display: flex; justify-content: space-between; align-items: center; width: 100%; pointer-events: none; }
+        .compliance-row-title { font-weight: 600; letter-spacing: 0.2rem; color: #00ff88; }
+        .compliance-row-status { font-size: 0.8rem; letter-spacing: 0.1rem; color: rgba(255,255,255,0.5); font-family: monospace; }
+        
+        .doc-list {
+            display: none; flex-direction: column; gap: 0.8rem; width: 100%; 
+            margin-top: 1.5rem; border-top: 1px dashed rgba(0, 255, 136, 0.3); padding-top: 1.5rem;
+        }
+        .compliance-row.expanded .doc-list { display: flex; animation: fade-in 0.4s ease forwards; }
+        
+        .doc-link {
+            color: rgba(255,255,255,0.6); font-size: 0.85rem; cursor: none; 
+            padding: 0.8rem 1rem; transition: all 0.3s; text-transform: uppercase;
+            background: rgba(0,0,0,0.3); border: 1px solid rgba(0,255,136,0.1);
+            position: relative; overflow: hidden; letter-spacing: 0.15rem;
+        }
+        .doc-link:hover { color: #000; background: #00ff88; padding-left: 1.5rem; font-weight: 600; box-shadow: 0 0 15px rgba(0,255,136,0.4); }
+
+        @keyframes fade-in { 0% { opacity: 0; transform: translateY(10px); } 100% { opacity: 1; transform: translateY(0); } }
+        
+        /* Central Document View Box styling */
+        .doc-view-container {
+            width: 80vw; max-width: 900px; height: 60vh; 
+            background: rgba(5, 10, 15, 0.7); border: 1px solid rgba(0, 255, 170, 0.3); 
+            padding: 2.5rem; color: rgba(200,220,255,0.9); font-size: 0.9rem; 
+            overflow-y: auto; line-height: 1.8; font-family: 'Inter', monospace; 
+            box-shadow: inset 0 0 30px rgba(0,0,0,0.6), 0 20px 50px rgba(0,0,0,0.8); 
+            backdrop-filter: blur(12px); cursor: none;
+        }
+
+        /* Uplink Comm (Contact Form) System - Updated Lilac/Mint */
+        .uplink-container {
+            width: 50vw; max-width: 600px;
+            background: rgba(15, 5, 20, 0.6); border: 1px solid rgba(152, 255, 152, 0.3);
+            box-shadow: 0 0 40px rgba(221, 160, 221, 0.15), inset 0 0 20px rgba(152, 255, 152, 0.1);
+            backdrop-filter: blur(16px); padding: 3rem; transform-origin: top center;
+            animation: unfold 0.8s cubic-bezier(0.19, 1, 0.22, 1) forwards;
+            display: flex; flex-direction: column; gap: 1.5rem; pointer-events: auto;
+        }
+        @keyframes unfold {
+            0% { transform: scaleY(0.01) scaleX(0.5); opacity: 0; }
+            50% { transform: scaleY(0.01) scaleX(1); opacity: 1; }
+            100% { transform: scaleY(1) scaleX(1); opacity: 1; }
+        }
+        .input-group { display: flex; flex-direction: column; gap: 0.5rem; }
+        .input-group label { color: #dda0dd; font-size: 0.75rem; letter-spacing: 0.2rem; font-weight: 600; }
+        .input-group input, .input-group textarea {
+            background: rgba(0, 0, 0, 0.5); border: 1px solid rgba(221, 160, 221, 0.3);
+            color: #fff; font-family: 'Inter', monospace; padding: 1rem;
+            max-width: 100%;
+            outline: none; cursor: none; transition: all 0.3s; resize: none;
+        }
+        .input-group input:focus, .input-group textarea:focus { 
+            border-color: #98ff98; box-shadow: 0 0 15px rgba(152,255,152,0.3); background: rgba(152,255,152,0.05); 
+        }
+        .submit-btn {
+            background: rgba(221, 160, 221, 0.1); border: 1px solid #dda0dd; color: #dda0dd; 
+            padding: 1.2rem; font-family: 'Inter', sans-serif; letter-spacing: 0.2rem; 
+            cursor: none; text-transform: uppercase; transition: all 0.3s; margin-top: 1rem; font-weight: 600;
+        }
+        .submit-btn:hover:not(:disabled) { background: #98ff98; color: #000; box-shadow: 0 0 20px #98ff98; border-color: #98ff98; }
+        .submit-btn:disabled { opacity: 0.5; border-color: rgba(221, 160, 221, 0.3); color: rgba(221, 160, 221, 0.5); background: transparent; }
+
+        /* Shared Basic Glitch Anim (Rapid) */
+        @keyframes glitch-anim {
+            0% { clip-path: inset(10% 0 80% 0); transform: translate(-2px, 2px); }
+            20% { clip-path: inset(40% 0 10% 0); transform: translate(2px, -2px); }
+            40% { clip-path: inset(80% 0 5% 0); transform: translate(-2px, 2px); }
+            60% { clip-path: inset(10% 0 60% 0); transform: translate(2px, -2px); }
+            80% { clip-path: inset(30% 0 20% 0); transform: translate(-2px, 2px); }
+            100% { clip-path: inset(50% 0 30% 0); transform: translate(2px, -2px); }
+        }
+
+        /* Heading Slower Stutter Glitch Anim */
+        @keyframes glitch-anim-heading {
+            0% { clip-path: inset(10% 0 80% 0); transform: translate(-2px, 2px); }
+            5% { clip-path: inset(40% 0 10% 0); transform: translate(2px, -2px); }
+            10% { clip-path: inset(80% 0 5% 0); transform: translate(-2px, 2px); }
+            15% { clip-path: inset(10% 0 60% 0); transform: translate(2px, -2px); }
+            20% { clip-path: inset(30% 0 20% 0); transform: translate(-2px, 2px); }
+            25% { clip-path: inset(50% 0 30% 0); transform: translate(2px, -2px); }
+            30%, 100% { clip-path: inset(100% 0 0% 0); transform: translate(0, 0); }
+        }
+
+        .glitch-text { position: relative; color: #98ff98; text-shadow: 0 0 20px rgba(152, 255, 152, 0.6); font-weight: 600; }
+        .glitch-text::before, .glitch-text::after { content: attr(data-text); position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: transparent; pointer-events: none; }
+        .glitch-text::before { left: 3px; text-shadow: -2px 0 #dda0dd; animation: glitch-anim-heading 3s infinite step-end alternate-reverse; }
+        .glitch-text::after { left: -3px; text-shadow: -2px 0 #ffffff; animation: glitch-anim-heading 4s infinite step-end alternate-reverse; }
+
+        /* Uplink Canvas Glitch Layers */
+        @keyframes glitch-canvas-anim {
+            0% { clip-path: inset(10% 0 80% 0); transform: translate(-40%, -50%) translate(-8px, 5px); }
+            5% { clip-path: inset(40% 0 10% 0); transform: translate(-40%, -50%) translate(8px, -5px); }
+            10% { clip-path: inset(80% 0 5% 0); transform: translate(-40%, -50%) translate(-8px, 5px); }
+            15% { clip-path: inset(10% 0 60% 0); transform: translate(-40%, -50%) translate(8px, -5px); }
+            20% { clip-path: inset(30% 0 20% 0); transform: translate(-40%, -50%) translate(-8px, 5px); }
+            25% { clip-path: inset(50% 0 30% 0); transform: translate(-40%, -50%) translate(8px, -5px); }
+            30%, 100% { clip-path: inset(0% 0 0% 0); transform: translate(-50%, -50%); } 
+        }
+        @keyframes glitch-canvas-anim-large {
+            0% { clip-path: inset(10% 0 80% 0); transform: translate(20%, 30%) translate(-15px, 15px); }
+            5% { clip-path: inset(40% 0 10% 0); transform: translate(20%, 30%) translate(15px, -15px); }
+            10% { clip-path: inset(80% 0 5% 0); transform: translate(20%, 30%) translate(-15px, 15px); }
+            15% { clip-path: inset(10% 0 60% 0); transform: translate(20%, 30%) translate(15px, -15px); }
+            20% { clip-path: inset(30% 0 20% 0); transform: translate(20%, 30%) translate(-15px, 15px); }
+            25% { clip-path: inset(50% 0 30% 0); transform: translate(20%, 30%) translate(15px, -15px); }
+            30%, 100% { clip-path: inset(0% 0 0% 0); transform: translate(20%, 30%); }
+        }
+        .glitch-canvas-primary {
+            position: absolute; top: 50%; left: 0%; z-index: -1; pointer-events: none; mix-blend-mode: screen;
+            animation: glitch-canvas-anim 3.5s infinite step-end alternate-reverse;
+        }
+        .glitch-canvas-secondary {
+            position: absolute; top: 80%; left: 40%; z-index: -1; pointer-events: none; mix-blend-mode: screen;
+            animation: glitch-canvas-anim-large 4.2s infinite step-end alternate-reverse;
+        }
+
+        /* Button specific glitch states */
+        .btn-glitch { position: relative; overflow: hidden; }
+        .btn-glitch::before, .btn-glitch::after { content: attr(data-text); position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; background: rgba(221, 160, 221, 0.1); color: #98ff98; pointer-events: none; }
+        .btn-glitch::before { left: 2px; text-shadow: -1px 0 #dda0dd; animation: glitch-anim 0.2s infinite linear alternate-reverse; }
+        .btn-glitch::after { left: -2px; text-shadow: -1px 0 #ffffff; animation: glitch-anim 0.3s infinite linear alternate-reverse; }
+        .btn-glitch-intense::before { animation-duration: 0.05s; transform: scale(1.02); }
+        .btn-glitch-intense::after { animation-duration: 0.07s; transform: scale(1.02); }
+
+        /* Mobile Responsiveness */
+        @media (max-width: 800px) {
+            .ui { display: flex; flex-direction: column; justify-content: space-between; padding: 1.5rem; }
+            .ui > div:not(.panel) { display: none; }
+            .panel { width: 100%; padding: 1.5rem; }
+            .nav-container { margin-top: 1.5rem; }
+            .content-title { font-size: 1.2rem; }
+            
+            /* Init Sequence Mobile Scaling */
+            .init-layout { flex-direction: column; align-items: center; padding: 1.5rem; width: 90vw; }
+            .profile-pic { width: 160px; height: 160px; }
+            .bio-text { max-height: 40vh; font-size: 0.8rem; padding-right: 0; }
+
+            /* Strict Mobile Archive Deck Scaling */
+            .archive-deck { flex-direction: column; height: auto; max-height: 75vh; width: 90vw; overflow-y: auto; overflow-x: hidden; padding-right: 10px; }
+            .archive-card { 
+                min-height: 80px; 
+                height: 80px; 
+                flex: none; 
+                overflow: hidden; 
+                justify-content: flex-start;
+                padding-top: 1.8rem;
+                transition: all 0.5s cubic-bezier(0.19, 1, 0.22, 1);
+            }
+            .archive-card:hover, .archive-card:active, .archive-card.is-open { 
+                min-height: max-content; 
+                height: auto; 
+                padding-bottom: 2rem; 
+            }
+            .card-title { 
+                transform: rotate(0deg) !important; 
+                position: relative !important; 
+                top: 0 !important; 
+                left: 0 !important;
+                margin: 0 !important;
+                text-align: center;
+            }
+            .archive-card:hover .card-title, .archive-card.is-open .card-title { 
+                transform: rotate(0deg) !important; 
+                top: 0 !important; 
+                margin-bottom: 1rem !important; 
+            }
+            .card-content { 
+                height: auto; 
+                max-height: none; 
+                width: 90%; 
+                margin-top: 1rem; 
+                padding-bottom: 1rem; 
+                justify-content: flex-start; 
+                overflow: visible; 
+                opacity: 0;
+                transition: opacity 0.4s ease;
+            }
+            .archive-card:hover .card-content, .archive-card.is-open .card-content {
+                opacity: 1;
+            }
+            
+            .placeholder-img { min-height: 120px; }
+            .proj-text-container { max-width: 100%; font-size: 0.8rem; margin-bottom: 1.5rem; }
+            .proj-img-container { min-height: 180px; flex: none; height: 180px; }
+            .compliance-grid { width: 90vw; }
+            .compliance-row { padding: 1rem; }
+            .uplink-container { width: 90vw; padding: 1.5rem; }
+            .doc-view-container { width: 95vw; height: 75vh; padding: 1.5rem; font-size: 0.8rem; }
+            .glitch-canvas-primary { width: 200px !important; height: 200px !important; }
+            .glitch-canvas-secondary { width: 120px !important; height: 120px !important; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="noise"></div>
+<canvas id="custom-cursor"></canvas>
+<canvas id="canvas"></canvas>
+
+<div class="ui" id="main-ui">
+    <aside class="panel" id="nav-panel">
+        <h1>
+            <span style="position: relative; display: inline-block;">
+                <canvas id="logo-canvas" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); pointer-events: none; z-index: -1;"></canvas>
+                <span style="position: relative; z-index: 2;">K</span>
+            </span>ITSERUKI D-VSN
+        </h1>
+        <div class="nav-container">
+            <div class="nav-item" data-action="warp" data-hover="About Kitseruki">01_INIT_SEQUENCE</div>
+            <div class="nav-item" data-action="archive" data-hover="Projects & Apps">02_PROJEKT_ARCHIVE</div>
+            <div class="nav-item" data-action="compliance" data-hover="Terms and Policies">03_COMPLIANCE_MATRIX</div>
+            <div class="nav-item" data-action="uplink" data-hover="Contact">04_UPLINK_COMM</div>
+        </div>
+    </aside>
+    <div></div>
+    <aside class="panel" style="justify-content: flex-end; align-items: flex-end; text-align: right;">
+        <div class="status">SYSTEM_ACTIVE</div>
+    </aside>
+</div>
+
+<div id="content-layer"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+<script>
+    // 0. Procedural Audio Engine
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    const audioCtx = new AudioContext();
+
+    const unlockAudio = () => {
+        if (audioCtx.state === 'suspended') {
+            audioCtx.resume();
+        }
+    };
+    document.body.addEventListener('click', unlockAudio, { once: true });
+    document.body.addEventListener('touchstart', unlockAudio, { once: true, passive: true });
+
+    function playHoverClick() {
+        if (audioCtx.state === 'suspended') return;
+        
+        const osc = audioCtx.createOscillator();
+        const gainNode = audioCtx.createGain();
+
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(600, audioCtx.currentTime); 
+
+        gainNode.gain.setValueAtTime(0, audioCtx.currentTime);
+        gainNode.gain.linearRampToValueAtTime(0.06, audioCtx.currentTime + 0.02);
+        gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.15);
+
+        osc.connect(gainNode);
+        gainNode.connect(audioCtx.destination);
+
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.15);
+    }
+
+    // Hash Update Router
+    function updateHash(hashPath) {
+        if (history.replaceState) {
+            history.replaceState(null, null, hashPath ? '#' + hashPath : window.location.pathname);
+        }
+    }
+
+    // 1. Scene Setup
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(60, window.innerWidth/window.innerHeight, 0.1, 400);
+    const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('canvas'), antialias: true, alpha: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+
+    window.addEventListener('resize', () => {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    // 2. Symbiote / Organic Geometry Setup
+    const symbioteGeom = new THREE.IcosahedronGeometry(120, 64);
+
+    const symbioteVertexShader = `
+        uniform float uTime;
+        uniform vec2 uMouse;
+        uniform float uInteraction;
+        
+        varying vec3 vNormal;
+        varying vec3 vViewPosition;
+        varying float vNoise;
+        varying float vMouseForce;
+        varying vec3 vWorldPos;
+
+        vec3 mod289(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+        vec4 mod289(vec4 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+        vec4 permute(vec4 x) { return mod289(((x*34.0)+1.0)*x); }
+        vec4 taylorInvSqrt(vec4 r) { return 1.79284291400159 - 0.85373472095314 * r; }
+        float snoise(vec3 v) {
+            const vec2 C = vec2(1.0/6.0, 1.0/3.0);
+            const vec4 D = vec4(0.0, 0.5, 1.0, 2.0);
+            vec3 i  = floor(v + dot(v, C.yyy));
+            vec3 x0 = v - i + dot(i, C.xxx);
+            vec3 g = step(x0.yzx, x0.xyz);
+            vec3 l = 1.0 - g;
+            vec3 i1 = min( g.xyz, l.zxy );
+            vec3 i2 = max( g.xyz, l.zxy );
+            vec3 x1 = x0 - i1 + C.xxx;
+            vec3 x2 = x0 - i2 + C.yyy;
+            vec3 x3 = x0 - D.yyy;
+            i = mod289(i);
+            vec4 p = permute( permute( permute( 
+                        i.z + vec4(0.0, i1.z, i2.z, 1.0 ))
+                      + i.y + vec4(0.0, i1.y, i2.y, 1.0 )) 
+                      + i.x + vec4(0.0, i1.x, i2.x, 1.0 ));
+            float n_ = 0.142857142857;
+            vec3  ns = n_ * D.wyz - D.xzx;
+            vec4 j = p - 49.0 * floor(p * ns.z * ns.z);
+            vec4 x_ = floor(j * ns.z);
+            vec4 y_ = floor(j - 7.0 * x_ );
+            vec4 x = x_ *ns.x + ns.yyyy;
+            vec4 y = y_ *ns.x + ns.yyyy;
+            vec4 h = 1.0 - abs(x) - abs(y);
+            vec4 b0 = vec4( x.xy, y.xy );
+            vec4 b1 = vec4( x.zw, y.zw );
+            vec4 s0 = floor(b0)*2.0 + 1.0;
+            vec4 s1 = floor(b1)*2.0 + 1.0;
+            vec4 sh = -step(h, vec4(0.0));
+            vec4 a0 = b0.xzyw + s0.xzyw*sh.xxyy ;
+            vec4 a1 = b1.xzyw + s1.xzyw*sh.zzww ;
+            vec3 p0 = vec3(a0.xy,h.x);
+            vec3 p1 = vec3(a0.zw,h.y);
+            vec3 p2 = vec3(a1.xy,h.z);
+            vec3 p3 = vec3(a1.zw,h.w);
+            vec4 norm = taylorInvSqrt(vec4(dot(p0,p0), dot(p1,p1), dot(p2, p2), dot(p3,p3)));
+            p0 *= norm.x; p1 *= norm.y; p2 *= norm.z; p3 *= norm.w;
+            vec4 m = max(0.6 - vec4(dot(x0,x0), dot(x1,x1), dot(x2,x2), dot(x3,x3)), 0.0);
+            m = m * m;
+            return 42.0 * dot( m*m, vec4( dot(p0,x0), dot(p1,x1), dot(p2,x2), dot(p3,x3) ) );
+        }
+
+        void main() {
+            vec3 pos = position;
+            
+            float n1 = snoise(pos * 0.02 + uTime * 0.3);
+            float n2 = snoise(pos * 0.05 - uTime * 0.5);
+            float combinedNoise = (n1 * 0.7) + (n2 * 0.3);
+            vNoise = combinedNoise;
+
+            vec4 tempMvPos = modelViewMatrix * vec4(pos, 1.0);
+            vec4 tempScreenPos = projectionMatrix * tempMvPos;
+            vec2 ndc = tempScreenPos.xy / tempScreenPos.w;
+            
+            float mouseDist = length(ndc - uMouse);
+            float mouseForce = smoothstep(0.8, 0.0, mouseDist);
+            vMouseForce = mouseForce;
+            
+            vec3 inwardsNormal = -normal;
+            float displacement = (combinedNoise * 18.0) + (mouseForce * 25.0 * uInteraction);
+            pos += inwardsNormal * displacement;
+
+            vWorldPos = pos;
+            vNormal = normalMatrix * inwardsNormal;
+            
+            vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
+            vViewPosition = -mvPosition.xyz;
+            
+            gl_Position = projectionMatrix * mvPosition;
+        }
+    `;
+
+    const symbioteFragmentShader = `
+        uniform vec3 uColorA;
+        uniform vec3 uColorB;
+        uniform float uTime;
+        uniform float uInteraction;
+        
+        varying vec3 vNormal;
+        varying vec3 vViewPosition;
+        varying float vNoise;
+        varying float vMouseForce;
+        varying vec3 vWorldPos;
+
+        void main() {
+            vec3 normal = normalize(vNormal);
+            vec3 viewDir = normalize(vViewPosition);
+            
+            normal = normalize(normal + vec3(vNoise * 0.25));
+
+            vec3 lightDir = normalize(vec3(0.5, 1.0, 1.0));
+            float diff = max(dot(normal, lightDir), 0.0);
+            
+            vec3 halfVector = normalize(lightDir + viewDir);
+            float spec = pow(max(dot(normal, halfVector), 0.0), 80.0); 
+            
+            float rim = 1.0 - max(dot(viewDir, normal), 0.0);
+            rim = smoothstep(0.5, 1.0, rim);
+            
+            vec3 baseColor = vec3(0.01, 0.01, 0.012);
+            vec3 reactionColor = mix(uColorA, uColorB, vNoise * 0.5 + 0.5);
+            
+            vec3 glow = reactionColor * (vMouseForce * uInteraction * 1.8 + rim * 0.5 + spec * 2.5);
+            
+            float crevice = smoothstep(0.2, -0.6, vNoise);
+            vec3 subsurface = reactionColor * crevice * 0.8;
+
+            vec3 finalColor = baseColor + glow + subsurface;
+            
+            float depth = gl_FragCoord.z / gl_FragCoord.w;
+            float fogFactor = smoothstep(40.0, 180.0, depth);
+            finalColor = mix(finalColor, vec3(0.0), fogFactor);
+
+            gl_FragColor = vec4(finalColor, 1.0);
+        }
+    `;
+
+    const sharedUniforms = {
+        uTime: { value: 0 },
+        uMouse: { value: new THREE.Vector2(0, 0) },
+        uColorA: { value: new THREE.Color(0x1144ff) },
+        uColorB: { value: new THREE.Color(0xff2288) },
+        uInteraction: { value: 1.0 }
+    };
+
+    const symbioteMat = new THREE.ShaderMaterial({
+        uniforms: sharedUniforms,
+        vertexShader: symbioteVertexShader,
+        fragmentShader: symbioteFragmentShader,
+        side: THREE.BackSide, 
+        transparent: true
+    });
+
+    const symbioteMesh = new THREE.Mesh(symbioteGeom, symbioteMat);
+    scene.add(symbioteMesh);
+
+    // 3. Variables & Cursor States
+    const cursorCanvas = document.getElementById('custom-cursor');
+    const ctx = cursorCanvas.getContext('2d');
+    cursorCanvas.width = 96; cursorCanvas.height = 96;
+
+    const logoCanvas = document.getElementById('logo-canvas');
+    const logoCtx = logoCanvas.getContext('2d');
+    logoCanvas.width = 128; logoCanvas.height = 128;
+
+    let mouseX = window.innerWidth / 2, mouseY = window.innerHeight / 2;
+    let cursorX = mouseX, cursorY = mouseY;
+    let sphereSpin = 0;
+    let isHovering = false, systemState = 'MENU';
+    let hoverProgress = 0;
+
+    // Handle both Mouse and Touch inputs seamlessly
+    window.addEventListener('mousemove', (e) => { 
+        mouseX = e.clientX; 
+        mouseY = e.clientY; 
+    });
+    window.addEventListener('touchmove', (e) => {
+        if(e.touches.length > 0) {
+            mouseX = e.touches[0].clientX;
+            mouseY = e.touches[0].clientY;
+        }
+    }, {passive: true});
+
+    function bindCursor(el) {
+        const defaultText = el.innerText;
+        const hoverText = el.getAttribute('data-hover');
+
+        const onEnter = () => { 
+            isHovering = true; 
+            playHoverClick(); 
+            if(hoverText) el.innerText = hoverText;
+        };
+        const onLeave = () => { 
+            isHovering = false; 
+            if(hoverText) el.innerText = defaultText;
+        };
+
+        el.addEventListener('mouseenter', onEnter);
+        el.addEventListener('mouseleave', onLeave);
+        el.addEventListener('touchstart', onEnter, {passive: true});
+        el.addEventListener('touchend', onLeave, {passive: true});
+    }
+    
+    // Bind initial menu items
+    document.querySelectorAll('.nav-item').forEach(bindCursor);
+
+    let targetZ = 0, speedMult = 1.0, currentSpeed = 1.0;
+    let cameraShake = 0, simTime = 0;
+    let targetColorA = new THREE.Color(0x1144ff), targetColorB = new THREE.Color(0xff2288);
+    camera.position.z = targetZ;
+
+    const clock = new THREE.Clock();
+    const navPanel = document.getElementById('nav-panel');
+    const mainUI = document.getElementById('main-ui');
+    const contentLayer = document.getElementById('content-layer');
+    let targetRotX = 0, targetRotY = 0, currentRotX = 0, currentRotY = 0;
+
+    // Document Repository Mapping
+    const documentRepository = {
+        "REVIEW FORGE": {
+            "TERMS_OF_USE.SYS": "TERMS OF USE & EULA\nLast Updated: July 2026\n\n1. Acceptance of Terms\nBy accessing, downloading, installing, connecting a wallet to, or otherwise using ReviewForge, you acknowledge that you have read, understood, and agree to be legally bound by these Terms of Use and EULA in their entirety. Your continued use of the application constitutes your ongoing acceptance of these terms and any subsequent modifications. If you do not agree to these terms, you must immediately cease all use of the application and uninstall it from your device.\n\n2. User Conduct\nYou agree not to post content that is illegal, offensive, or constitutes harassment. Spamming, botting, or attempting to manipulate the community rating systems of \"The Forge\" is strictly prohibited and may result in permanent account suspension.\n\n3. Content Ownership & License\nYou retain ownership of the reviews and submissions you create. However, by posting content, you grant ReviewForge a non-exclusive, royalty-free, perpetual license to display, distribute, and translate that content within the ecosystem.\n\n4. Incentives and Rewards\nAny incentives, rewards, or community benefits that may be offered within ReviewForge are provided at the sole discretion of the application developers. ReviewForge does not guarantee or promise in any circumstance that any incentive or reward shall have a monetary value. Such offerings, if any, do not constitute a guarantee of future value and may be modified, suspended, or withdrawn at any time without prior notice.\n\n5. Third-Party DApps\nReviewForge provides a platform to discover dApps on the Solana blockchain. We do not own, control, or endorse these third-party applications. Your use of any listed dApp is at your own risk and subject to that dApp's own terms and conditions.\n\n6. Disclaimer of Warranties\nReviewForge is provided \"as is\" without any warranties of any kind. We do not guarantee the accuracy of community reviews or the safety of listed third-party projects.\n\n7. Limitation of Liability\nIn no event shall ReviewForge or its developers be liable for any damages, including loss of digital assets, arising from your use of the app or interaction with third-party dApps discovered through the platform.\n\n8. Termination\nWe reserve the right to terminate or suspend your access to ReviewForge at our sole discretion, without notice, for conduct that we believe violates these Terms or is harmful to other users.\n\n9. Compliance and Geographic Restrictions\nIt is your sole responsibility to ensure that your use of ReviewForge and its features complies with all applicable local, state, and international laws. You must ensure you are not accessing or using the application from a restricted country or jurisdiction where such use would be prohibited. ReviewForge makes no representation that the application is appropriate or available for use in any specific location.",
+            "END_USER_LICENSE.DAT": "Please refer to the TERMS_OF_USE.SYS document for the complete, combined Terms of Use & EULA.",
+            "PRIVACY_PROTOCOL.LOG": "PRIVACY POLICY\nLast updated: 12th August 2026\n\nThis Privacy Policy describes how ReviewForge (\"we,\" \"us,\" or \"our\") collects, uses, and safeguards your information when you interact with our ecosystem and applications (the \"Service\"). We respect your privacy and are committed to protecting your personal data. By using the Service, you agree to the practices described below.\n\nInformation We Collect\nTo provide a personalized and secure experience, we collect specific categories of information:\n\nWallet & Identity Data: When you connect using the Solana Mobile Wallet Adapter, we collect your public wallet address. We use this to identify your account, verify the presence of a Seeker Genesis Token (SGT) for ecosystem access, and resolve your .skr domain identity where applicable.\n\nProfile & Social Data: We collect the profile information you explicitly provide, including your bio, SkrId, social handles, profile pictures, and any uploaded assets, to personalize your experience.\n\nContent & Community Contributions: When you submit a review, participate in community events, or make other community contributions, we collect the associated data (such as ratings, text, and metadata). In the event that we offer games, contests, or any community or individual scored activities, we will also collect the associated performance data. All such contribution and performance data is stored securely via Google Firestore.\n\nOperational Metrics & Security Signals: We collect on-device behavioral data and interaction metrics to monitor platform integrity. This helps us identify trends, perform security audits, resolve bugs, and filter out harmful, automated, or bot-like behaviors.\n\nInformation We Do Not Collect\nPrivate Keys or Seed Phrases: ReviewForge is non-custodial and secure. We never have access to, request, transmit, or store your private keys or recovery phrases.\n\nCloud Translation Data: While ReviewForge utilizes Google ML Kit for in-app translation, all processing happens locally on your device. Your review text is never sent to external cloud translation servers.\n\nHow We Use Information\nWe use the information we collect to:\n\nOperate, maintain, and provide ecosystem access and features.\n\nManage your account, track contributions, and facilitate community events or scored activities.\n\nEnsure community safety by detecting and preventing fraud, abuse, and automated bot activity.\n\nImprove application stability and user experience.\n\nThird-Party Services\nWe utilize trusted third-party providers to operate and secure the Service. These providers process information under their own privacy policies:\n\nGoogle Firebase (including Firestore): We use Firebase for secure data hosting, database management (Firestore), file storage, and anonymized analytics to maintain app stability and performance. To understand how your data is handled and protected by these systems, please review the Google Privacy Policy.\n\nSolana: The public blockchain network on which verifiable credentials and specific transaction records settle.\n\nGoogle ML Kit: Utilized strictly for on-device, localized translation without cloud data transmission.\n\nBlockchain Transparency & Permanence\nPlease be aware that any data written directly to the Solana blockchain (such as transaction records or specific verifiable credentials) becomes part of a public, permanent ledger. Due to the immutable nature of blockchain technology, ReviewForge cannot modify, obscure, or delete data once it has been recorded on-chain.\n\nYour Rights & Data Incineration\nYou have the right to access, modify, or delete your personal data from our active systems at any time.\n\nReviewForge provides a dedicated 'Incineration' tool within your account settings. Initiating this process will permanently delete your profile, reviews, submissions, and contribution data from our centralized databases. Note: The Incineration process cannot remove or alter data that has already been committed to the public Solana blockchain.\n\nChanges to This Policy\nWe may update this Privacy Policy from time to time to reflect changes in our practices or the Service. When we do, we will revise the \"Last updated\" date at the top of this document.\n\nContact Us\nIf you have any questions about this Privacy Policy, our data practices, or the Incineration process, please contact us via Forge Support"
+        },
+        "REDACTED PROJECT": {
+            "TERMS_OF_USE.SYS": "REDACTED Project Preliminary Terms...\n\nThis environment is experimental. Access is granted as-is, with no guarantee of stability. Subject to sudden termination during the testing phase.",
+            "END_USER_LICENSE.DAT": "REDACTED Project Temporary EULA...\n\nTesting license valid for 90 days. Do not deploy in mission-critical environments. Proceed with caution.",
+            "PRIVACY_PROTOCOL.LOG": "REDACTED Project Diagnostic Privacy...\n\nAggressive diagnostic telemetry is collected automatically during the REDACTED phase to ensure stability metrics are met."
+        },
+        "CORRUPT PROJECT": {
+            "TERMS_OF_USE.SYS": "CORRUPT Project Classified Terms...\n\nRestricted access only. Any unauthorized transmission of CORRUPT parameters will result in immediate network expulsion.",
+            "END_USER_LICENSE.DAT": "CORRUPT Project Enterprise EULA...\n\nEnterprise licensing and proprietary deployment parameters apply. See assigned administrator for credentialing.",
+            "PRIVACY_PROTOCOL.LOG": "CORRUPT Project Secure Privacy...\n\nStrict zero-knowledge architecture is active. No logs are retained beyond transient memory."
+        }
+    };
+
+    // Typewriter Utility
+    function typeText(element, text, speed, onComplete) {
+        let i = 0;
+        element.innerHTML = '';
+        function step() {
+            if (i < text.length) {
+                const char = text.charAt(i);
+                element.innerHTML += char === '\n' ? '<br>' : char;
+                i++;
+                setTimeout(step, speed);
+            } else if (onComplete) {
+                onComplete();
+            }
+        }
+        step();
+    }
+
+    // 4. Transition Pipelines
+    function returnToCore() {
+        systemState = 'MENU';
+        updateHash('');
+        targetZ = 0; speedMult = 1.0; cameraShake = 0;
+        targetColorA.setHex(0x1144ff); targetColorB.setHex(0xff2288);
+        contentLayer.classList.remove('visible');
+        mainUI.className = 'ui';
+        setTimeout(() => { contentLayer.innerHTML = ''; }, 1000);
+    }
+
+    function createReturnButton() {
+        const btn = document.createElement('button');
+        btn.className = 'return-btn'; btn.innerText = 'RETURN_TO_CORE';
+        bindCursor(btn);
+        btn.addEventListener('click', returnToCore);
+        return btn;
+    }
+
+    // Dynamic Document View Generator
+    function openDocument(docType, projectName) {
+        systemState = 'DOC_VIEW';
+        contentLayer.classList.remove('visible');
+        
+        const safeProjectName = projectName.trim();
+        const safeDocType = docType.trim();
+        updateHash('DOC_VIEW/' + encodeURIComponent(safeProjectName) + '/' + encodeURIComponent(safeDocType));
+        
+        // Execute Zoom Off camera transition - zoomed out further & softer
+        targetZ = -100; 
+        speedMult = 0.3; 
+        cameraShake = 0.2;
+        targetColorA.setHex(0x00ffaa); // Vibrant Green-Cyan
+        targetColorB.setHex(0x0055ff); // Vibrant Blue
+        
+        const docContent = (documentRepository[safeProjectName] && documentRepository[safeProjectName][safeDocType]) 
+            ? documentRepository[safeProjectName][safeDocType] 
+            : "[ ERROR 404 ] \n\nPAYLOAD NOT FOUND IN REPOSITORY OR DATA CORRUPTED.";
+        
+        setTimeout(() => {
+            cameraShake = 0;
+            
+            contentLayer.innerHTML = `
+                <div id="documents" style="display: flex; flex-direction: column; align-items: center; width: 100%;">
+                    <div id="doc-title-container" class="content-title" style="color: #00ffaa; font-size: 1.5rem; text-shadow: 0 0 20px rgba(0,255,170,0.4); min-height: 2rem;"></div>
+                    <div class="doc-view-container">
+                        <div id="doc-loader-container" style="color: #00ffaa; font-weight: 600; white-space: pre-wrap; margin-bottom: 2rem; min-height: 5rem;"></div>
+                        <div id="doc-body-container" style="opacity: 0; transform: translateY(10px); transition: all 1s ease; white-space: pre-wrap;">${docContent}</div>
+                    </div>
+                </div>
+            `;
+            const backBtn = document.createElement('button');
+            backBtn.className = 'return-btn'; 
+            backBtn.innerText = 'BACK_TO_MATRIX';
+            backBtn.style.borderColor = "rgba(0,255,170,0.3)";
+            bindCursor(backBtn);
+            backBtn.addEventListener('click', () => {
+                document.querySelector('[data-action="compliance"]').click();
+            });
+            contentLayer.appendChild(backBtn);
+            
+            contentLayer.classList.add('visible');
+
+            // Trigger Typewriter Animations
+            const titleEl = document.getElementById('doc-title-container');
+            const loaderEl = document.getElementById('doc-loader-container');
+            const bodyEl = document.getElementById('doc-body-container');
+
+            typeText(titleEl, `${safeProjectName} // ${safeDocType}`, 30, () => {
+                typeText(loaderEl, `[ DECRYPTING PAYLOAD ]\nEstablishing secure connection to repository for ${safeProjectName}...\nRetrieving ${safeDocType}...`, 15, () => {
+                    bodyEl.style.opacity = 1;
+                    bodyEl.style.transform = 'translateY(0)';
+                });
+            });
+
+        }, 800);
+    }
+
+    document.querySelectorAll('.nav-item').forEach(item => {
+        item.addEventListener('click', (e) => {
+            if (systemState !== 'MENU' && systemState !== 'DOC_VIEW') return;
+            const action = e.target.dataset.action || 'compliance';
+            systemState = action;
+            isHovering = false;
+
+            if (action === 'warp') {
+                updateHash('INIT_SEQUENCE');
+                mainUI.classList.add('transition-warp');
+                targetZ = -40; speedMult = 6.0; 
+                targetColorA.setHex(0x1144ff); targetColorB.setHex(0x00ffff);
+                setTimeout(() => {
+                    contentLayer.innerHTML = `
+                        <div class="content-title" style="color: #00ffff; text-shadow: 0 0 20px rgba(0,255,255,0.4);">01 // INIT_SEQUENCE_ACTIVE</div>
+                        <div class="init-layout">
+                            <div class="profile-pic" style="background-image: url('https://br5npqys7kt1w2ag.public.blob.vercel-storage.com/Projects/prof_kit.png');"></div>
+                            <div class="bio-text">
+                                <span style="color: #00ffff; font-weight: 600; letter-spacing: 0.2rem;">IDENTIFIER:</span> KITSERUKI<br>
+                                <span style="color: #00ffff; font-weight: 600; letter-spacing: 0.2rem;">DESIGNATION:</span> D-VSN<br><br>
+                                Hi, I'm Kitseruki. I am a developer focused on web3 experiences. Driven by an evolving algorithm of curiosity, I am deeply passionate about bringing useful dApps and engaging games to life across the Solana ecosystem.<br><br>
+                                For me, the journey through coding on Solana is a continuous cycle of creating, learning, and growing alongside the community to build a more interconnected future, while bringing some hopefully useful, and fun but maybe not so useful apps to life.<br><br>
+                                > SPECIALIZATION: Solana dApps, Community-Driven Interfaces.<br>
+                                > STATUS: Online, compiling, and building.<br><br>
+                                [ Kitseruki.D-Vsn Est.2025]
+                            </div>
+                        </div>
+                    `;
+                    contentLayer.appendChild(createReturnButton());
+                    contentLayer.classList.add('visible');
+                }, 1000);
+            } 
+            else if (action === 'archive') {
+                updateHash('PROJEKT_ARCHIVE');
+                mainUI.classList.add('transition-warp'); 
+                targetZ = -20; speedMult = 3.0; 
+                targetColorA.setHex(0x00ffff); targetColorB.setHex(0xffffff); 
+                
+                setTimeout(() => {
+                    contentLayer.innerHTML = `
+                        <div class="content-title" style="color: #00ffff; text-shadow: 0 0 20px rgba(0,255,255,0.4);">PROJEKT_ARCHIVE</div>
+                        <div class="archive-deck">
+                            <div class="archive-card">
+                                <div class="card-title">01 // REVIEW FORGE</div>
+                                <div class="card-content" style="padding-right: 10px; display: flex; flex-direction: column; justify-content: space-between;">
+                                    <div class="proj-text-container">
+                                        In a small forge, somewhere deep within the dApp Lands, Kit the review smith, awakens to find the Forge completely empty. The heroes who once filled the forge with meaningful reviews have vanished, the archives once filled from floor to ceiling with meaningful and insightful dApp reviews are gone. Will you help him fire up the Forge, share insights into dApps to help the heroes craft better dApps for everyone?<br><br>
+                                        <em>Review Forge - Because why just rate dApps when you can help improve them.</em>
+                                    </div>
+                                    <div class="proj-img-container" style="background-image: url('https://br5npqys7kt1w2ag.public.blob.vercel-storage.com/Projects/rfsitegraphic2.png');"></div>
+                                </div>
+                            </div>
+                            <div class="archive-card redacted-card">
+                                <div class="card-title">02 // <span class="redacted-block">REDACTED</span></div>
+                                <div class="card-content" style="padding-right: 10px; display: flex; flex-direction: column; justify-content: space-between;">
+                                    <div class="proj-text-container">
+                                        <span class="redacted-block">CLASSIFIED_DATA_STREAM</span>. THE FOLLOWING INFORMATION HAS BEEN EXPUNGED UNDER DIRECTIVE 7A.<br><br>
+                                        <span class="redacted-block">Project Celestial</span> aims to <span class="redacted-block">bridge dimensions</span> while controlling <span class="redacted-block">interdimensional celestial creatures</span> by implementing <span class="redacted-block">advanced rift entanglement</span>. Deployment scheduled for <span class="redacted-block">202X</span>. Initial test subjects<span class="redacted-block">reportedly experiencing kinetic and psychic</span> expansion after exposure.<br><br>
+                                        <em><span class="redacted-block">Project Lead </span> Status: Missing</em>
+                                    </div>
+                                    <div class="proj-img-container img-redacted"></div>
+                                </div>
+                            </div>
+                            <div class="archive-card corrupt-card">
+                                <div class="card-title" style="color: rgba(255, 0, 85, 0.5);">03 // CØRRÜPT_D4T4</div>
+                                <div class="card-content" style="padding-right: 10px; display: flex; flex-direction: column; justify-content: space-between;">
+                                    <div class="proj-text-container corrupt-text">
+                                        FATAL_EXCEPTION_0x00F8A9.<br>
+                                        M3M0RY_L34K_DETECTED...<br>
+                                        åß∂ƒ©˙∆˚¬…æ≈ç√∫˜µ≤≥÷<br><br>
+                                        S¥ST3M_F41LUR3. UNABLE TO PARSE VOLUME HEADER. BAD SECTOR AT 0x889B. PLEASE CONTACT SYSTEM ADMINISTRATOR.<br>
+                                        VØ1D_R3SØN4NC3_OVERL0AD.<br><br>
+                                        <em>[ EOF ]</em>
+                                    </div>
+                                    <div class="proj-img-container img-corrupt"></div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                    contentLayer.appendChild(createReturnButton());
+                    contentLayer.classList.add('visible');
+                    
+                    contentLayer.querySelectorAll('.archive-card').forEach(card => {
+                        bindCursor(card);
+                        // Mobile tap-to-open logic
+                        card.addEventListener('click', function() {
+                            const isOpen = this.classList.contains('is-open');
+                            contentLayer.querySelectorAll('.archive-card').forEach(c => c.classList.remove('is-open'));
+                            if (!isOpen) this.classList.add('is-open');
+                        });
+                    });
+                }, 1000);
+            }
+            else if (action === 'compliance') {
+                updateHash('COMPLIANCE_MATRIX');
+                contentLayer.classList.remove('visible'); // Prepare for re-entry if from Doc View
+                mainUI.classList.add('transition-lift'); 
+                targetZ = 60; speedMult = 0.2; cameraShake = 0;
+                targetColorA.setHex(0x00ff88); targetColorB.setHex(0x005522); 
+                
+                setTimeout(() => {
+                    contentLayer.innerHTML = `
+                        <div id="documents" style="display: flex; flex-direction: column; align-items: center; width: 100%;">
+                            <div class="content-title" style="color: #00ff88; text-shadow: 0 0 20px rgba(0,255,136,0.4);">
+                                COMPLIANCE_MATRIX <span style="font-size: 0.4em; vertical-align: middle; opacity: 0.6; letter-spacing: 0.1rem;">// SYS_DOCS</span>
+                            </div>
+                            <div class="compliance-grid">
+                                ${['TERMS_OF_USE.SYS', 'PRIVACY_PROTOCOL.LOG'].map(doc => `
+                                <div class="compliance-row">
+                                    <div class="compliance-row-header">
+                                        <div class="compliance-row-title">${doc}</div>
+                                        <div class="compliance-row-status">${doc.includes('PRIVACY') ? '[ ENCRYPTED ]' : '[ VERIFIED ]'}</div>
+                                    </div>
+                                    <div class="doc-list">
+                                        <div class="doc-link">REVIEW FORGE</div>
+                                        <div class="doc-link">REDACTED PROJECT</div>
+                                        <div class="doc-link">CORRUPT PROJECT</div>
+                                    </div>
+                                </div>
+                                `).join('')}
+                            </div>
+                        </div>
+                    `;
+                    contentLayer.appendChild(createReturnButton());
+                    contentLayer.classList.add('visible');
+                    
+                    // Bind interactions for Compliance Matrix 3D UI
+                    contentLayer.querySelectorAll('.compliance-row').forEach(row => {
+                        bindCursor(row);
+                        row.addEventListener('click', function(e) {
+                            if (e.target.closest('.doc-link')) return; 
+                            
+                            this.classList.add('flipping');
+                            setTimeout(() => {
+                                this.classList.toggle('expanded');
+                                this.classList.remove('flipping');
+                            }, 400); 
+                        });
+                    });
+
+                    contentLayer.querySelectorAll('.doc-link').forEach(link => {
+                        bindCursor(link);
+                        link.addEventListener('click', (e) => {
+                            e.stopPropagation();
+                            const docType = e.target.closest('.compliance-row').querySelector('.compliance-row-title').innerText;
+                            const projectName = e.target.innerText;
+                            openDocument(docType, projectName);
+                        });
+                    });
+
+                }, 1000);
+            }
+            else if (action === 'uplink') {
+                updateHash('UPLINK_COMM');
+                mainUI.classList.add('transition-drop');
+                targetZ = -10; speedMult = 12.0; cameraShake = 1.5;
+                targetColorA.setHex(0xdda0dd); targetColorB.setHex(0x98ff98); 
+                setTimeout(() => {
+                    contentLayer.innerHTML = `
+                        <div class="uplink-container">
+                            <div style="position: relative; text-align: center; margin-bottom: 0;">
+                                <div style="position: relative; display: inline-block;">
+                                    <canvas id="uplink-canvas" class="glitch-canvas-primary" width="256" height="256"></canvas>
+                                    <canvas id="uplink-canvas-2" class="glitch-canvas-secondary" width="160" height="160"></canvas>
+                                    <div class="content-title glitch-text" data-text="MESSAGE_REPOSITORY" style="margin: 0; position: relative; z-index: 1;">MESSAGE_REPOSITORY</div>
+                                </div>
+                            </div>
+                            <form class="uplink-form" style="display: flex; flex-direction: column; gap: 1.5rem; margin-top: 1rem;">
+                                <div class="input-group">
+                                    <label>TRANSMITTER_ID [YOUR EMAIL]</label>
+                                    <input type="email" name="email" required autocomplete="off" />
+                                </div>
+                                <div class="input-group">
+                                    <label>PAYLOAD [YOUR MESSAGE]</label>
+                                    <textarea name="message" required rows="4"></textarea>
+                                </div>
+                                <button type="submit" class="submit-btn" data-text="INITIATE_TRANSFER">INITIATE_TRANSFER</button>
+                            </form>
+                        </div>
+                    `;
+                    contentLayer.appendChild(createReturnButton());
+                    contentLayer.classList.add('visible');
+                    
+                    // Bind cursor to new form elements
+                    contentLayer.querySelectorAll('input, textarea, .submit-btn').forEach(bindCursor);
+                }, 800);
+            }
+        });
+    });
+
+    // Deep Linking / Routing Initialization
+    function initSystemFromHash() {
+        const hash = window.location.hash.substring(1);
+        if (!hash) return;
+        
+        const parts = hash.split('/');
+        if (parts[0] === 'DOC_VIEW' && parts.length === 3) {
+            const proj = decodeURIComponent(parts[1]);
+            const doc = decodeURIComponent(parts[2]);
+            setTimeout(() => openDocument(doc, proj), 100);
+        } else {
+            const actionMap = {
+                'INIT_SEQUENCE': 'warp',
+                'PROJEKT_ARCHIVE': 'archive',
+                'COMPLIANCE_MATRIX': 'compliance',
+                'UPLINK_COMM': 'uplink'
+            };
+            const targetAction = actionMap[parts[0]];
+            if (targetAction) {
+                const navItem = document.querySelector(`[data-action="${targetAction}"]`);
+                if (navItem) {
+                    setTimeout(() => navItem.click(), 100);
+                }
+            }
+        }
+    }
+    initSystemFromHash();
+
+    // 5. Render Loop
+    function animate() {
+        requestAnimationFrame(animate);
+        const delta = clock.getDelta();
+
+        // Cursor Physics & Lerping
+        const lerpFactor = isHovering ? 0.6 : 0.15;
+        cursorX += (mouseX - cursorX) * lerpFactor;
+        cursorY += (mouseY - cursorY) * lerpFactor;
+        cursorCanvas.style.transform = `translate3d(${cursorX - 48}px, ${cursorY - 48}px, 0)`;
+
+        // Update Shader Mouse Coordinates
+        const normMouseX = (mouseX / window.innerWidth) * 2 - 1;
+        const normMouseY = -(mouseY / window.innerHeight) * 2 + 1;
+        sharedUniforms.uMouse.value.set(normMouseX, normMouseY);
+
+        // Dynamic Cursor Rendering
+        hoverProgress += ((isHovering ? 1 : 0) - hoverProgress) * 0.15;
+        ctx.clearRect(0, 0, 96, 96);
+        const center = 48;
+
+        sphereSpin += delta * (2.5 + hoverProgress * 5.0);
+
+        const r = Math.round(255 - (255 * hoverProgress));
+        const g = 255; 
+        const b = Math.round(255 - (119 * hoverProgress));
+        const colorStr = `rgba(${r}, ${g}, ${b}`;
+
+        const orbit = 16 + (8 * hoverProgress);
+        const sSize = 2 + (1.5 * hoverProgress);
+        
+        const points = [];
+        for(let i = 0; i < 3; i++) {
+            const angle = sphereSpin + (i * (Math.PI * 2 / 3));
+            points.push({ x: center + Math.cos(angle) * orbit, y: center + Math.sin(angle) * orbit });
+        }
+
+        ctx.beginPath();
+        ctx.moveTo(points[0].x, points[0].y);
+        ctx.lineTo(points[1].x, points[1].y);
+        ctx.lineTo(points[2].x, points[2].y);
+        ctx.closePath();
+        ctx.strokeStyle = `${colorStr}, ${0.15 + (0.35 * hoverProgress)})`;
+        ctx.lineWidth = 1 + (0.5 * hoverProgress);
+        ctx.stroke();
+
+        ctx.fillStyle = `${colorStr}, 1)`;
+        ctx.shadowBlur = 12 + (8 * hoverProgress);
+        ctx.shadowColor = `rgb(${r}, ${g}, ${b})`;
+
+        for(let i = 0; i < 3; i++) {
+            ctx.beginPath();
+            ctx.arc(points[i].x, points[i].y, sSize, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        if (hoverProgress > 0.05) {
+            ctx.fillStyle = `${colorStr}, ${hoverProgress})`;
+            ctx.beginPath(); 
+            ctx.arc(center, center, 1.5 * hoverProgress, 0, Math.PI * 2); 
+            ctx.fill();
+        }
+
+        // Logo Canvas Background Rendering
+        logoCtx.clearRect(0, 0, 128, 128);
+        const lCenter = 64;
+        const lOrbit = 24; 
+        const lSize = 2.5;
+        const lSpin = simTime * 1.5; 
+        
+        const lPoints = [];
+        for(let i = 0; i < 3; i++) {
+            const angle = lSpin + (i * (Math.PI * 2 / 3));
+            lPoints.push({ x: lCenter + Math.cos(angle) * lOrbit, y: lCenter + Math.sin(angle) * lOrbit });
+        }
+
+        logoCtx.beginPath();
+        logoCtx.moveTo(lPoints[0].x, lPoints[0].y);
+        logoCtx.lineTo(lPoints[1].x, lPoints[1].y);
+        logoCtx.lineTo(lPoints[2].x, lPoints[2].y);
+        logoCtx.closePath();
+        logoCtx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
+        logoCtx.lineWidth = 1.5;
+        logoCtx.stroke();
+
+        logoCtx.fillStyle = 'rgba(255, 255, 255, 1)';
+        logoCtx.shadowBlur = 15;
+        logoCtx.shadowColor = '#ffffff';
+
+        for(let i = 0; i < 3; i++) {
+            logoCtx.beginPath();
+            logoCtx.arc(lPoints[i].x, lPoints[i].y, lSize, 0, Math.PI * 2);
+            logoCtx.fill();
+        }
+
+        // Uplink Background Spheres Rendering
+        const uplinkCanvas = document.getElementById('uplink-canvas');
+        if (uplinkCanvas && systemState === 'uplink') {
+            const uCtx = uplinkCanvas.getContext('2d');
+            uCtx.clearRect(0, 0, 256, 256);
+            const uc = 128;
+            const uOrbit = 50; 
+            const uSize = 6;
+            const uSpin = simTime * 0.6;
+            
+            const uPoints = [];
+            for(let i=0; i<3; i++) {
+                const angle = uSpin + (i * (Math.PI * 2 / 3));
+                uPoints.push({ x: uc + Math.cos(angle)*uOrbit, y: uc + Math.sin(angle)*uOrbit });
+            }
+            
+            uCtx.beginPath();
+            uCtx.moveTo(uPoints[0].x, uPoints[0].y);
+            uCtx.lineTo(uPoints[1].x, uPoints[1].y);
+            uCtx.lineTo(uPoints[2].x, uPoints[2].y);
+            uCtx.closePath();
+            uCtx.strokeStyle = 'rgba(221, 160, 221, 0.4)';
+            uCtx.lineWidth = 2;
+            uCtx.stroke();
+            
+            uCtx.fillStyle = '#98ff98';
+            uCtx.shadowBlur = 20;
+            uCtx.shadowColor = '#98ff98';
+            for(let i=0; i<3; i++) {
+                uCtx.beginPath();
+                uCtx.arc(uPoints[i].x, uPoints[i].y, uSize, 0, Math.PI*2);
+                uCtx.fill();
+            }
+        }
+
+        // Secondary Uplink Spheres Rendering
+        const uplinkCanvas2 = document.getElementById('uplink-canvas-2');
+        if (uplinkCanvas2 && systemState === 'uplink') {
+            const uCtx2 = uplinkCanvas2.getContext('2d');
+            uCtx2.clearRect(0, 0, 160, 160);
+            const uc2 = 80;
+            const uOrbit2 = 30; 
+            const uSize2 = 4;
+            const uSpin2 = simTime * -0.15;
+            
+            const uPoints2 = [];
+            for(let i=0; i<3; i++) {
+                const angle = uSpin2 + (i * (Math.PI * 2 / 3));
+                uPoints2.push({ x: uc2 + Math.cos(angle)*uOrbit2, y: uc2 + Math.sin(angle)*uOrbit2 });
+            }
+            
+            uCtx2.beginPath();
+            uCtx2.moveTo(uPoints2[0].x, uPoints2[0].y);
+            uCtx2.lineTo(uPoints2[1].x, uPoints2[1].y);
+            uCtx2.lineTo(uPoints2[2].x, uPoints2[2].y);
+            uCtx2.closePath();
+            uCtx2.strokeStyle = 'rgba(221, 160, 221, 0.3)';
+            uCtx2.lineWidth = 1.5;
+            uCtx2.stroke();
+            
+            uCtx2.fillStyle = '#98ff98';
+            uCtx2.shadowBlur = 15;
+            uCtx2.shadowColor = '#98ff98';
+            for(let i=0; i<3; i++) {
+                uCtx2.beginPath();
+                uCtx2.arc(uPoints2[i].x, uPoints2[i].y, uSize2, 0, Math.PI*2);
+                uCtx2.fill();
+            }
+        }
+
+        // UI Parallax Physics
+        if (systemState === 'MENU') {
+            targetRotY = normMouseX * 12; targetRotX = -normMouseY * 12;
+            currentRotY += (targetRotY - currentRotY) * 0.05;
+            currentRotX += (targetRotX - currentRotX) * 0.05;
+            navPanel.style.transform = `rotateY(${currentRotY}deg) rotateX(${currentRotX}deg)`;
+        }
+
+        // Camera Dynamics (Z-Axis mapping simulates realm traversal)
+        camera.position.z += (targetZ - camera.position.z) * 0.02;
+        if (cameraShake > 0.01) {
+            camera.position.x = (Math.random() - 0.5) * cameraShake;
+            camera.position.y = (Math.random() - 0.5) * cameraShake;
+            if (systemState !== 'uplink') cameraShake *= 0.9; 
+        } else {
+            camera.position.x += (0 - camera.position.x) * 0.1;
+            camera.position.y += (0 - camera.position.y) * 0.1;
+        }
+
+        // Environment Rotation (Subtle drift + DOC_VIEW dampening)
+        const isDocView = systemState === 'DOC_VIEW';
+        const envRotTargetX = isDocView ? (normMouseX * 0.05) : (normMouseX * 0.2);
+        const envRotTargetY = isDocView ? (-normMouseY * 0.05) : (-normMouseY * 0.2);
+        const envRotLerp = isDocView ? 0.01 : 0.02;
+
+        symbioteMesh.rotation.y += (envRotTargetX - symbioteMesh.rotation.y) * envRotLerp + (isDocView ? 0.0005 : 0.001);
+        symbioteMesh.rotation.x += (envRotTargetY - symbioteMesh.rotation.x) * envRotLerp;
+
+        // Symbiote Biological Pulse Dynamics
+        currentSpeed += (speedMult - currentSpeed) * 0.03;
+        simTime += delta * currentSpeed;
+
+        const targetInteraction = isDocView ? 0.05 : 1.0;
+        sharedUniforms.uInteraction.value += (targetInteraction - sharedUniforms.uInteraction.value) * 0.05;
+
+        sharedUniforms.uTime.value = simTime;
+        sharedUniforms.uColorA.value.lerp(targetColorA, 0.03);
+        sharedUniforms.uColorB.value.lerp(targetColorB, 0.03);
+
+        renderer.render(scene, camera);
+    }
+    animate();
+</script>
+
+<script type="module">
+  // 1. Import Firebase SDKs from CDN
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+  import { getFirestore, collection, addDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+  import { initializeAppCheck, ReCaptchaV3Provider } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app-check.js";
+
+  // 2. Specific Firebase Configuration
+  const firebaseConfig = {
+    apiKey: "AIzaSyBgpLbHyFOv9JFa1rbhILM1007KvR5mgP4", 
+    authDomain: "kitseruki-d-vsn.firebaseapp.com",
+    projectId: "kitseruki-d-vsn",
+    storageBucket: "kitseruki-d-vsn.firebasestorage.app",
+    messagingSenderId: "731485976175",
+    appId: "1:731485976175:web:0f1cffc646f2f217817f9a" 
+  };
+
+  // 3. Initialize Firebase & Firestore
+  const app = initializeApp(firebaseConfig);
+  const db = getFirestore(app);
+
+  // 4. Initialize App Check with your reCAPTCHA site key
+  const appCheck = initializeAppCheck(app, {
+    provider: new ReCaptchaV3Provider('6LclbVwtAAAAAGvHCukmv4To1KZ9Ku5bSydqGvtd'), 
+    isTokenAutoRefreshEnabled: true
+  });
+
+  // 5. Safely intercept the form submission when it's dynamically loaded
+  document.addEventListener('DOMContentLoaded', () => {
+    const observeForm = () => {
+      const form = document.querySelector('.uplink-form');
+      if (form && !form.dataset.firebaseBound) {
+        form.dataset.firebaseBound = "true"; // Prevent duplicate event listeners
+        
+        form.addEventListener('submit', async (e) => {
+          e.preventDefault();
+          
+          const emailInput = form.querySelector('input[name="email"]');
+          const messageInput = form.querySelector('textarea[name="message"]');
+          const submitBtn = form.querySelector('.submit-btn');
+
+          if (!emailInput || !messageInput || !submitBtn) return;
+
+          // Payload Sanitization and Truncation to prevent abuse
+          const emailStr = emailInput.value.trim().substring(0, 100);
+          const msgStr = messageInput.value.trim().substring(0, 1000);
+          
+          if (!emailStr || !msgStr) {
+              submitBtn.innerText = "INVALID_PAYLOAD";
+              submitBtn.setAttribute('data-text', "INVALID_PAYLOAD");
+              return;
+          }
+
+          // Visual state feedback matching UI theme
+          submitBtn.innerText = "TRANSFERRING...";
+          submitBtn.setAttribute('data-text', "TRANSFERRING...");
+          submitBtn.classList.add('btn-glitch');
+          submitBtn.disabled = true;
+
+          try {
+            // Write contact message payload to Firestore database
+            await addDoc(collection(db, "contact_messages"), {
+              email: emailStr,
+              message: msgStr,
+              timestamp: new Date()
+            });
+
+            submitBtn.classList.add('btn-glitch-intense');
+            setTimeout(() => {
+                submitBtn.classList.remove('btn-glitch', 'btn-glitch-intense');
+                submitBtn.innerText = "TRANSFER_COMPLETE";
+                submitBtn.setAttribute('data-text', "TRANSFER_COMPLETE");
+                form.reset();
+            }, 800);
+          } catch (error) {
+            console.error("Firebase transfer error:", error);
+            submitBtn.classList.remove('btn-glitch');
+            submitBtn.innerText = "TRANSFER_FAILED";
+            submitBtn.setAttribute('data-text', "TRANSFER_FAILED");
+            submitBtn.disabled = false;
+          }
+        });
+      }
+    };
+
+    // Watch the content-layer because form is injected dynamically on navigation
+    const observer = new MutationObserver(observeForm);
+    const target = document.getElementById('content-layer');
+    if (target) {
+      observer.observe(target, { childList: true, subtree: true });
+    }
+  });
+</script>
+</body>
+</html>
